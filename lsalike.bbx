@@ -9,6 +9,7 @@
 % 0.8h 2016/03/22 - Fixed LingBuzz reference again.
 % 0.8i 2016/03/29 - Updated DeclareNameFormat to work with BibLaTeX 3.3.
 % 0.8j 2016/06/02 - Added support for ROA eprints.
+% 0.8k 2018/06/05 - Added Toronto Working Papers in Linguistics to eprint.
 
 % This style will probably work with slightly older versions of BibLaTeX in
 % the 0.9 series, but it is best to assume version 1.0 which has been the
@@ -637,18 +638,23 @@
     {\nolinkurl{http://elanguage.net/journals/bls/article/view/#1}}}
 \DeclareFieldAlias{eprint:BLS}{eprint:bls}
 
-% Rutgers Optimality Archive
+% Rutgers Optimality Archive.
 \DeclareFieldFormat{eprint:roa}{%
   \mkbibacro{ROA}\acronymcolon\space
   \ifhyperref
-    {%
-        \iffieldundef{eprintclass}%
-        	{\nolinkurl{#1}}%
-        	{\href{http://roa.rutgers.edu/article/view/\thefield{eprintclass}}{\nolinkurl{#1}}}%
-    }%
-    {\nolinkurl{#1}}%
-}
+    {\iffieldundef{eprintclass}%
+      {\nolinkurl{#1}}%
+      {\href{http://roa.rutgers.edu/article/view/\thefield{eprintclass}}{\nolinkurl{#1}}}}%
+    {\nolinkurl{#1}}}
 \DeclareFieldAlias{eprint:ROA}{eprint:roa}
+
+% Toronto Working Papers in Linguistics.
+\DeclareFieldFormat{eprint:twpl}{%
+  \mkbibacro{TWPL}\acronymcolon\space
+  \ifhyperref
+    {\href{http://twpl.library.utoronto.ca/index.php/twpl/article/view/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{http://twpl.library.utoronto.ca/index.php/twpl/article/view/#1}}}
+\DeclareFieldAlias{eprint:TWPL}{eprint:twpl}
 
 % Feel free to submit more online collection types for the eprint fields.
 % Even better, pester your favourite online collection to support DOI or
