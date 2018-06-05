@@ -1,0 +1,45 @@
+\ProvidesFile{lsalike.cbx}[2010/16/09 v0.7 biblatex linguistic bibliographies]
+
+\RequireCitationStyle{authoryear-icomp}
+
+%%%
+%%% Options.
+%%%
+
+\newtoggle{lsa:citecomma}
+\newtoggle{lsa:nopostnotespace}
+
+% Use a comma as separator between citations and page numbers. If true the
+% print e.g. "(Crippen 2009, p. 42)", if false then print e.g. "(Crippen
+% 2009: 42)". Usually linguists want a colon, contra the BibLaTeX default.
+\DeclareBibliographyOption{citecomma}[true]{%
+  \settoggle{lsa:citecomma}{#1}}
+
+% If using a colon as separator between citations and page numbers then include
+% a thin space after the colon. If lsa:citecomma is true then this is ignored.
+\DeclareBibliographyOption{nopostnotespace}[true]{%
+  \settoggle{lsa:nopostnotespace}{#1}}
+
+%%%
+%%% Delimiters.
+%%%
+
+% Space after colon delimiter between citation and page numbers.
+\newcommand{\postnotedelimspace}{\addthinspace}
+
+% Delimiter between citation and page numbers.
+\renewcommand*{\postnotedelim}{%
+  \iftoggle{lsa:citecomma}
+    {\addcomma}
+    {\iftoggle{lsa:nopostnotespace}
+      {\addcolon}
+      {\addcolon\postnotedelimspace}}}
+
+% Print "p." or "pp." only if using comma as page number delimiter.
+\DeclareFieldFormat{postnote}{%
+  \iftoggle{lsa:citecomma}
+    {\mkpageprefix[pagination]{#1}}
+    {#1}}
+
+% Add a few other things to possible range indicators in a number range.
+\DeclareRangeChars*{–·—−}

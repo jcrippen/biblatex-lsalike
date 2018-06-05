@@ -1,0 +1,1292 @@
+\ProvidesFile{lsalike.bbx}[2016/06/02 v0.8j biblatex linguistic bibliographies]
+
+% Changelog
+%
+% 0.8d 2014/04/29 - Changed biblography option labelyear to labeldate.
+% 0.8e 2015/02/06 - Added Stanford Encyclopedia of Philosophy to eprint types.
+% 0.8f 2015/03/13 - Added Berkeley Linguistics Society proceedings to eprint.
+% 0.8g 2015/09/28 - Fixed LingBuzz reference.
+% 0.8h 2016/03/22 - Fixed LingBuzz reference again.
+% 0.8i 2016/03/29 - Updated DeclareNameFormat to work with BibLaTeX 3.3.
+% 0.8j 2016/06/02 - Added support for ROA eprints.
+
+% This style will probably work with slightly older versions of BibLaTeX in
+% the 0.9 series, but it is best to assume version 1.0 which has been the
+% focus of all testing. Adventurous users can change this if they don't want
+% to install a newer BibLaTeX version.
+\@ifpackagelater{biblatex}{2016/03/03}
+  {}
+  {\PackageError{biblatex}
+    {Outdated 'biblatex' package'}
+    {The version of the 'lsalike' style you are using\MessageBreak
+     requires biblatex v3.3 or later.\MessageBreak
+     You are using: '\csuse{ver@biblatex.sty}'.\MessageBreak
+     This is a fatal error. I'm aborting now.}%
+   \endinput}
+
+% This style tries hard to maintain as much compatibility as possible with
+% the main BibLaTeX authoryear style. Doing so allows us to retain things like
+% backreferences, indexing, refsections and refsegments, and many other nifty
+% features that we would otherwise have to reimplement. The downside is that
+% the code here is fairly opaque, mostly redefining things that were already
+% implemented elsewhere.
+\RequireBibliographyStyle{authoryear}
+
+%%%
+%%% Override BibLaTeX options.
+%%%
+
+% See the BibLaTeX manual (section "User Guide - Package Options") for details
+% about the options used below as well as many other interesting options.
+%
+% The authoryear style by default enables some of these, but we do so again.
+
+\ExecuteBibliographyOptions{
+  hyperref=auto,	% turn on hyperlinks if hyperref package is loaded
+  abbreviate=true,	% enable abbreviations
+  autocite=inline,	% \autocite produces inline citations
+  sorting=nyt,		% sort by name, year, title
+  useeditor=true,	% editor replaces author if author is missing
+  giveninits=false,	% do not initialize givenname
+  maxnames=5,		% maximum number of names before et al. (bib & cite)
+  maxbibnames=3,	% maximum number of names before et al. (bibliogr only) 
+  maxcitenames=3,	% maximum number of names before et al. (citation only) 
+  minnames=1,		% minimum number of names for et al. (bib & cite)
+  labeldate=true,	% enable the label{year,month,day} and extrayear fields
+  pagetracker=true,	% turn on the page tracker
+  citetracker=constrict,% turn on the citation tracker, ctx sensv strict
+  ibidtracker=false,	% turn off the ibidem tracker
+  idemtracker=false,	% turn off the idem tracker
+  uniquename=false,	% don't uniquify names
+}
+
+%%%
+%%% Style-specific options.
+%%%
+
+% Boolean variables for options. See below for the real option definitions.
+%
+% Some options we inherit from BibLaTeX's authoryear style (or standard):
+%  - isbn: printing ISBN
+%  - url: printing URLs
+%  - urldate: format of urldate (cf. useurldate below)
+%  - doi: printing DOIs
+%  - eprint: printing eprint info
+%  - dashed: printing dashes for repeated authors/editors
+% These options use toggles with a "bbx:" prefix instead of "lsa:".
+
+\newtoggle{lsa:scauthor}
+\newtoggle{lsa:scacronym}
+\newtoggle{lsa:ae-lastfirst}
+\newtoggle{lsa:ed-lastfirst}
+\newtoggle{lsa:ed-onelastfirst}
+\newtoggle{lsa:noedparens}
+\newtoggle{lsa:issn}
+\newtoggle{lsa:acronymcolon}
+\newtoggle{lsa:quoteart}
+\newtoggle{lsa:unpubart}
+\newtoggle{lsa:thesisart}
+\newtoggle{lsa:datebold}
+\newtoggle{lsa:dateparens}
+\newtoggle{lsa:bookseriesemph}
+\newtoggle{lsa:voldotnum}
+\newtoggle{lsa:jnlcolonpages}
+\newtoggle{lsa:url}
+\newtoggle{lsa:useurldate}
+\newtoggle{lsa:urldateparens}
+\newtoggle{lsa:urlseen}
+\newtoggle{lsa:library}
+\newtoggle{lsa:commathesis}
+\newtoggle{lsa:usebibxrefs}
+
+% FIXME: Implement this.
+\newtoggle{lsa:subtitle}
+
+% Print authors and the like in small capitals.
+%
+% The LSA unified stylesheet says to use ordinary formatting for names. This
+% is in contrast with the practice of the LSA's own journal _Language_, which
+% is notable for giving authors in small caps. This option enables _Language_
+% style names. Small caps are only applied to the names at the beginning of
+% a bibliography entry, not to names elsewhere such as the editor of the
+% volume in which the entry was published.
+%
+% Since small caps are not present in all fonts the code below tries to
+% detect this and behave appropriately. The problem is that to make text into
+% small caps it needs to be first converted to lowercase, due to how LaTeX and
+% most fonts handle small caps. If this were done when the font lacked small
+% caps then the result would be the wrong appearance of all lowercase. This
+% does not always matter for names, but it is more important for e.g. acronyms.
+\DeclareBibliographyOption{scauthor}[true]{%
+  \ifstrequal{#1}{true}
+    % User wants small caps (i.e. value is true).
+    {\ifcsundef{\f@encoding/\f@family/\f@series/sc}
+      % No small caps available despite user intent.
+      {\settoggle{lsa:scauthor}{false}} 
+      % Small caps available.
+      {\settoggle{lsa:scauthor}{true}}}
+    % User doesn't want small caps (i.e. value is false).
+    {\settoggle{lsa:scauthor}{false}}}
+
+% Print acronyms (ISBN, URL, DOI, etc.) in small capitals.
+%
+% Acronyms are in all uppercase. This can make them stand out unpleasantly
+% from the rest of a bibliography entry. Using small capitals reduces their
+% "colour", as well as conforming with good typographic practice. See the
+% comments above for the details behind the code here.
+%
+% Some pedants would complain about the fine distinction between "initialisms"
+% and "acronyms". I care not one whit, don't write to me to about this.
+\DeclareBibliographyOption{scacronym}[true]{%
+  \ifstrequal{#1}{true}
+    % User wants small caps (i.e. value is true).
+    {\ifcsundef{\f@encoding/\f@family/\f@series/sc}
+      % No small caps available despite user intent.
+      {\settoggle{lsa:scacronym}{false}} 
+      % Small caps available.
+      {\settoggle{lsa:scacronym}{true}}}
+    % User doesn't want small caps (i.e. value is false).
+    {\settoggle{lsa:scacronym}{false}}}
+
+% List all authors/editors as Last, First.
+%
+% The LSA unified stylesheet gives the first author or editor as Last, First
+% and the other authors/editors as First Last.
+%   Chomsky, Noam & Morris Halle.
+%   Johnson, Kyle, Mark Baker, & Ian Roberts.
+% Increasingly there are people who prefer Last, First for all names.
+%   Chomsky, Noam & Halle, Morris.
+% If there are more than two author/editors, then commas will not suffice to
+% separate them in the list. Instead semicolons are used.
+%   Johnson, Kyle; Baker, Mark; & Roberts, Ian.
+\DeclareBibliographyOption{ae-lastfirst}[true]{%
+  \settoggle{lsa:ae-lastfirst}{#1}}
+
+% List editors of inbook or incollection as Last, First.
+%
+% The above option does not apply to name lists other than the initial one in
+% a bibliography entry. This applies to name lists elsewhere, particularly
+% to those for editors of inbook or incollection entries. The LSA unified
+% stylesheet is mute on multiple names other than in the initial list.
+\DeclareBibliographyOption{ed-lastfirst}[true]{%
+  \settoggle{lsa:ed-lastfirst}{#1}}
+
+% List only the first editor of inbook or incollection as Last, First.
+%
+% The LSA unified stylesheet does not give any examples of multiple editors.
+% The order of names in such lists is thus unspecified. This option will
+% print the first name in such a list as Last, First with the rest printed as
+% First Last.
+\DeclareBibliographyOption{ed-onelastfirst}[true]{%
+  \settoggle{lsa:ed-onelastfirst}{#1}}
+
+% Don't wrap editor string in parens.
+%
+% Using "John Goldsmith (ed.)" instead of "John Goldsmith, ed." is required
+% by the LSA unified stylesheet and is also general practice in linguistics.
+% Hence this is a *negative* option, saying to *not* parenthesize the editor
+% abbreviation, and instead to follow the BibLaTeX authoryear style.
+\DeclareBibliographyOption{noedparens}[true]{%
+  \settoggle{lsa:noedparens}{#1}}
+
+% Print ISSN (standard serial numbers for periodicals).
+%
+% ISSNs are not given in the LSA unified stylesheet, nor are they often seen
+% in bibliographies. Nonetheless, like ISBNs, they can be quite useful. Note
+% that BibLaTeX already supplies an option to enable printing ISBNs.
+\DeclareBibliographyOption{issn}[true]{%
+  \settoggle{lsa:issn}{#1}}
+
+% Print a colon after acronyms, e.g. "ISBN: ".
+%
+% BibLaTeX supplies a colon after acronyms by default. This option omits the
+% colon. Since the LSA unified stylesheet does not include acronyms like
+% "URL", this option is irrelevant for following the official standard.
+\DeclareBibliographyOption{acronymcolon}[true]{%
+  \settoggle{lsa:acronymcolon}{#1}}
+
+% Surround article titles with quotes. Otherwise plain.
+%
+% The LSA unified stylesheet specifies that articles should *not* be surrounded
+% with quotation marks, contra widespread linguistic practice although in
+% keeping with some journals.
+\DeclareBibliographyOption{quoteart}[true]{%
+  \settoggle{lsa:quoteart}{#1}}
+
+% Treat unpublished titles like articles. Otherwise like books.
+%
+% The LSA unified stylesheet is mute on the matter of unpublished manuscripts.
+% Some bibliographic styles surround the titles of unpublished works with 
+% quotation marks like articles, others italicize them like books.
+\DeclareBibliographyOption{unpubart}[true]{%
+  \settoggle{lsa:unpubart}{#1}}
+
+% Treat theses and dissertation titles like articles. Otherwise like books.
+%
+% The LSA unified stylesheet says to treat thesis and dissertation titles
+% like books, thus italicized. Some prefer to enclose them in quotation marks
+% in keeping with articles.
+\DeclareBibliographyOption{thesisart}[true]{%
+  \settoggle{lsa:thesisart}{#1}}
+
+% Surround the publication date with parentheses.
+%
+% The LSA unified stylesheet, following widespread practice in linguistics,
+% says to not surround the year with parens. The convention in APA-like
+% formatting is to use parens.
+\DeclareBibliographyOption{dateparens}[true]{%
+  \settoggle{lsa:dateparens}{#1}}
+
+% Print the publication date in bold.
+%
+% This is a personal preference which does not seem to be in common use. It
+% makes the year stand out after a long string of authors, making it easier
+% to see through a dense bibliography.
+\DeclareBibliographyOption{datebold}[true]{%
+  \settoggle{lsa:datebold}{#1}}
+
+% Emphasize (italicize) the series title for books.
+%
+% The LSA unified stylesheet says to not italicize the series title, only
+% the actual book title. This option enables italicized series. It employs
+% the LaTeX \emph{...} command which usually produces italics but may produce
+% something else depending on context.
+\DeclareBibliographyOption{bookseriesemph}[true]{%
+  \settoggle{lsa:bookseriesemph}{#1}}
+
+% Separate journal number from volume with a period. Otherwise parens around
+% the volume.
+%
+% The LSA unified stylesheet says to surround the journal number with parens:
+%    Language 59(3). 514-528.
+% But often a period is used instead:
+%    Language 59.3: 514-528.
+% Note that the colon is controlled with the separate option jnlcolonpages. If
+% that option is not also enabled, then you get this:
+%    Language 59.3. 514-528.
+% This format does not seem to be much used, but it is a possibility.
+\DeclareBibliographyOption{voldotnum}[true]{%
+  \settoggle{lsa:voldotnum}{#1}}
+
+% Separate journal info from page numbers with a colon. Otherwise a period.
+%
+% The LSA unified stylesheet specifies the use of a period:
+%    Language 59(3). 514-528.
+% Many styles use a colon instead:
+%    Language 59(3): 514-528.
+% If enabled, this option produces the latter punctuation.
+\DeclareBibliographyOption{jnlcolonpages}[true]{%
+  \settoggle{lsa:jnlcolonpages}{#1}}
+
+% Print the urldate field, the date when an url was visited.
+%
+% The LSA unified stylesheet does not give URL dates, unlike e.g. the Chicago
+% Manual of Style practice. This enables URL dates as supplied by BibLaTeX.
+\DeclareBibliographyOption{useurldate}[true]{%
+  \settoggle{lsa:useurldate}{#1}}
+
+% Surround the urldate with parens.
+\DeclareBibliographyOption{urldateparens}[true]{%
+  \settoggle{lsa:urldateparens}{#1}}
+
+% Print a label (the urlseen bibliography string) for the urldate.
+%
+% The label is the urlseen bibstring. This option is ignored if useurldate is
+% false.
+\DeclareBibliographyOption{urlseen}[true]{%
+  \settoggle{lsa:urlseen}{#1}}
+
+% Print the library field if it is present.
+%
+% This just prints whatever is given, it's not smart at all. It does use
+% small caps for uppercase if possible, see the library bibmacro below.
+\DeclareBibliographyOption{library}[true]{%
+  \settoggle{lsa:library}{#1}}
+
+% Precede a thesis type field with a comma, otherwise no comma.
+%
+% The LSA unified stylesheet says to not use a comma between school and type:
+%   Vancouver, BC: UBC dissertation.
+%   Cambridge, MA: MIT MA thesis.
+% Another common practice is to use a comma with a more detailed type:
+%   Vancouver, BC: University of British Columbia, PhD dissertation.
+%   Cambridge, MA: Massachusetts Institute of Technology, master's thesis.
+% Since the content of the type field is just printed without modification,
+% this option only controls the presence of the comma.
+%
+% FIXME: Actually do something intelligent with the type field. Handle the
+%   BibTeX mastersthesis and phdthesis entry types separately with an option
+%   to override the type field.
+\DeclareBibliographyOption{commathesis}[true]{%
+  \settoggle{lsa:commathesis}{#1}}
+
+% Use citation-style cross references in the bibliography for works referenced
+% from within other works (incollection, inproceedings, inbook, etc.).
+%
+% The LSA unified stylesheet is moot on this point, implying that every entry
+% should be a complete entry. But when multiple citations come from the same
+% published work, such as papers in a proceedings or edited volume, it is
+% more economical to have the entries cross-reference an independent entry
+% with the information for the main volume. If this option is enabled then
+% cross-reference citations in the bibliography will be used.
+%
+% FIXME: Finish implementing this.
+\DeclareBibliographyOption{usebibxrefs}[true]{%
+  \settoggle{lsa:usebibxrefs}{#1}}
+
+%%%
+%%% Major styles.
+%%%
+
+% Each of these is a set of options that result in bib formatting that fits
+% some specific style.
+%
+% Feel free to contribute more style sets!
+
+% Somewhat ironically, the official journal of the LSA does not conform to its
+% own stylesheet. This is largely due to the weight of tradition.
+%\DeclareBibliographyOptions{Language}[true]{%
+%  scauthor=true,
+%  scacronym=true,
+%  isbn=false,
+%  issn=false,
+%  doi=false,
+%  eprint=false,
+%  commathesis,
+%  jnlcolonpages
+%}
+
+%\DeclareBibliographyOptions{IJAL}[true]{%
+%}
+
+% The author's personal preferences.
+%\DeclareBibliographyOptions{Crippen}[true]{%
+%}
+
+%%%
+%%% Bibliography strings.
+%%%
+
+% Use "&" instead of "and" everywhere.
+\DefineBibliographyStrings{english}{and = {\&}}
+
+% Abbreviate chapter to just "ch.", not "chap.".
+\DefineBibliographyStrings{english}{chapter = {ch\adddot}}
+
+% Use "edn." rather than "ed.".
+\DefineBibliographyStrings{english}{edition = {edn\adddot}}
+
+% Strings for translations. Many languages are already handled by BibLaTeX.
+\NewBibliographyString{langrussian}
+\DefineBibliographyStrings{english}{langrussian = {Russian}}
+\NewBibliographyString{fromrussian}
+\DefineBibliographyStrings{english}{fromrussian = {from the Russian}}
+
+%%%
+%%% Formatting commands.
+%%%
+
+% Small capitals.
+% Adapted from \mkbibbold in biblatex.sty.
+% Works just like \mkbibemph and \mkbibbold. Uses internal macros, may break
+% in future versions of BibLaTeX.
+\newrobustcmd*{\mkbibscap}{\textsc}
+\protected\long\def\blx@imc@mkbibscap#1{%
+  \textsc{#1}\blx@imc@setpunctfont\textsc}
+
+% The "In" for inbooks and incollection.
+\newbibmacro*{in}{%
+  \printtext{%
+    \bibstring{in}\addspace}}
+
+%%%
+%%% Title formats.
+%%%
+
+% Separate subtitles with a colon.
+% The LSA stylesheet implies this with the following book title:
+%   Analogy, leveling, markedness: Principles of change in phonology and ...
+% although the stylesheet does not explicitly mention subtitles. Many users
+% will simply embed the subtitles in the title field rather than making them
+% separate (following generic BibTeX), thus avoiding this issue.
+\renewcommand*{\subtitlepunct}{\addcolon\addspace}
+
+% Although the LSA stylesheet says to use sentence case for titles (i.e.,
+% only capitalize the first word), this style ignores case. It's up to the
+% bibliography preparer to capitalize stuff properly, especially because
+% there's no way to handle proper names cleanly other than special formatting
+% in the bib file (e.g. title = {The languages of {N}ative {N}orth {A}merica}).
+
+% Italics (\mkbibemph) for "volume (book, journal, dissertation) titles".
+% Presumably this covers things that are printed under separate covers.
+\DeclareFieldFormat[book]{title}{\mkbibemph{#1}}
+\DeclareFieldFormat[booklet]{title}{\mkbibemph{#1}}
+\DeclareFieldFormat[collection]{title}{\mkbibemph{#1}}
+\DeclareFieldFormat[manual]{title}{\mkbibemph{#1}}
+\DeclareFieldFormat[periodical]{title}{\mkbibemph{#1}}
+\DeclareFieldFormat[proceedings]{title}{\mkbibemph{#1}}
+
+% Quotation marks are used for other titles in some journals, but the LSA
+% unified style sheet says not to do so. The quoteart option controls this.
+%
+% FIXME: Rename \mkbibquotemaybe to \mkbibquoteart
+\newcommand{\mkbibquotemaybe}[1]{%
+  \iftoggle{lsa:quoteart}
+    {\mkbibquote{#1}}
+    {#1}}
+\DeclareFieldFormat[article]{title}{\mkbibquotemaybe{#1}}
+\DeclareFieldFormat[inbook]{title}{\mkbibquotemaybe{#1}}
+\DeclareFieldFormat[incollection]{title}{\mkbibquotemaybe{#1}}
+\DeclareFieldFormat[inproceedings]{title}{\mkbibquotemaybe{#1}}
+\DeclareFieldFormat[patent]{title}{\mkbibquotemaybe{#1}}
+\DeclareFieldFormat[report]{title}{\mkbibquotemaybe{#1}}
+
+% Unpublished materials might be either articles or books. The user needs
+% to decide whether to format the titles like books or articles. The LSA 
+% unified stylesheet is mute on this point.
+\newcommand{\mkbibstyleunpub}[1]{%
+  \iftoggle{lsa:unpubart}
+    {\mkbibquotemaybe{#1}}
+    {\mkbibemph{#1}}}
+\DeclareFieldFormat[unpublished]{title}{\mkbibstyleunpub{#1}}
+
+% Theses (including dissertations) can be either like articles or like books.
+% The LSA unified stylesheet specifies italics like books.
+\newcommand{\mkbibstylethesis}[1]{%
+  \iftoggle{lsa:thesisart}
+    {\mkbibquotemaybe{#1}}
+    {\mkbibemph{#1}}}
+\DeclareFieldFormat[thesis]{title}{\mkbibstylethesis{#1}}
+
+%%%
+%%% Bibliography cross-references.
+%%%
+
+% This is a special cite command for use only in bibliographies.
+%\DeclareCiteCommand{\bbx@xref}
+%  {}
+%  {...}
+%  {}
+%  {}
+
+%%%
+%%% Acronyms.
+%%%
+
+% Adapted from biblatex.def \mkbibacro.
+\renewcommand{\mkbibacro}[1]{%
+  \iftoggle{lsa:scacronym}
+    % Are small caps really available in the font?
+    {\ifcsundef{\f@encoding/\f@family/\f@series/sc}
+       % Force the acronym to uppercase if no small caps.
+       {\MakeUppercase{#1}}%
+       % Force the acronym to lowercase and then small cap it.
+       {\mkbibscap{\MakeLowercase{#1}}}}
+    % Do nothing.
+    {#1}}
+
+% An optional colon after acronyms.
+\newcommand*{\acronymcolon}{%
+  \iftoggle{lsa:acronymcolon}
+    {\addcolon}
+    {}}
+
+\DeclareFieldFormat{isbn}{\mkbibacro{ISBN}\acronymcolon\addspace #1}
+\DeclareFieldFormat{isrn}{\mkbibacro{ISBN}\acronymcolon\addspace #1}
+\DeclareFieldFormat{issn}{\mkbibacro{ISBN}\acronymcolon\addspace #1}
+\DeclareFieldFormat{url}{\mkbibacro{URL}\acronymcolon\addspace\url{#1}}
+
+% Printing various things accompanying an URL.
+\newcommand*{\maybeurldateparens}[1]{%
+  \iftoggle{lsa:urldateparens}
+    {\mkbibparens{#1}}
+    {#1}}
+\newcommand*{\maybeurlseen}{%
+  \iftoggle{lsa:urlseen}
+    {\bibstring{urlseen}\addspace}
+    {}}
+\DeclareFieldFormat{urldate}{%
+  \iftoggle{lsa:useurldate}
+    {\maybeurldateparens{\maybeurlseen#1}}
+    {}}
+
+% Adapted from biblatex.def.
+%
+% The following fields have various embedded hyperlinks so we need more complex
+% definitions. There are \DeclareFieldAlias definitions in biblatex.def that
+% need not be duplicated here.
+%
+% FIXME: There should be a hook for the \acronymcolon instead so we don't have
+% to duplicate all this stuff from biblatex.def.
+\DeclareFieldFormat{doi}{%
+  \mkbibacro{DOI}\acronymcolon\space
+  \ifhyperref
+    {\href{http://dx.doi.org/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% Generic eprint.
+\DeclareFieldFormat{eprint}{%
+  \iffieldundef{eprinttype}
+    {\mkbibacro{eprint}}
+    {\thefield{eprinttype}}%
+  \acronymcolon\space
+  \ifhyperref
+    {\url{#1}}
+    {\nolinkurl{#1}}%
+  \iffieldundef{eprintclass}
+    {}
+    {\addspace\mkbibparens{\thefield{eprintclass}}}}
+
+% HDL handles.
+\DeclareFieldFormat{eprint:hdl}{%
+  \mkbibacro{HDL}\acronymcolon\space
+  \ifhyperref
+    {\href{http://hdl.handle.net/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% ArXiv preprints.
+\DeclareFieldFormat{eprint:arxiv}{%
+  arXiv\acronymcolon
+  \ifhyperref
+    {\href{http://arxiv.org/\abx@arxivpath/#1}{%
+       \nolinkurl{#1}%
+       \iffieldundef{eprintclass}
+	 {}
+	 {\addspace\texttt{\mkbibbrackets{\thefield{eprintclass}}}}}}
+    {\nolinkurl{#1}
+     \iffieldundef{eprintclass}
+       {}
+       {\addspace\texttt{\mkbibbrackets{\thefield{eprintclass}}}}}}
+
+% JSTOR.
+\DeclareFieldFormat{eprint:jstor}{%
+  \mkbibacro{JSTOR}\acronymcolon\space
+  \ifhyperref
+    {\href{http://www.jstor.org/stable/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% PubMed.
+\DeclareFieldFormat{eprint:pubmed}{%
+  \mkbibacro{PMID}\acronymcolon\space
+  \ifhyperref
+    {\href{http://www.ncbi.nlm.nih.gov/pubmed/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% Google Books.
+\DeclareFieldFormat{eprint:googlebooks}{%
+  Google Books\acronymcolon\space
+  \ifhyperref
+    {\href{http://books.google.com/books?id=#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% LingBuzz.
+\DeclareFieldFormat{eprint:lingbuzz}{%
+  LingBuzz\acronymcolon\space
+  \ifhyperref
+    {\href{http://ling.auf.net/lingbuzz/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+\DeclareFieldAlias{eprint:LingBuzz}{eprint:lingbuzz}
+\DeclareFieldAlias{eprint:lingBuzz}{eprint:lingbuzz}
+
+% Alaska Native Language Archive.
+\DeclareFieldFormat{eprint:anla}{%
+  Alaska Native Language Archive\acronymcolon\space
+  \ifhyperref
+    {\href{http://www.uaf.edu/anla/item.xml?id=#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% Alaska State Library - Historical Collections (part of Vilda).
+% FIXME: Is there a way to link via the Identifier rather than the URL number?
+\DeclareFieldFormat{eprint:asl-hc}{%
+  Alaska State Library – Historical Collections\acronymcolon\space
+  \ifhyperref
+    {\href{http://vilda.alaska.edu/cdm/ref/collection/cdmg21/id/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% Northwest Journal of Linguistics.
+% It would be nice if this was a DOI or HDL instead, but whatever.
+\DeclareFieldFormat{eprint:nwjl}{%
+  \ifhyperref
+    {\mkbibacro{URL}\acronymcolon\space
+     \href{http://www.sfu.ca/nwjl/Articles/#1}{\nolinkurl{#1}}}
+    {}}
+
+% Internet Archive.
+\DeclareFieldFormat{eprint:archive.org}{%
+  Internet Archive\acronymcolon\space
+  \ifhyperref
+    {\href{http://archive.org/details/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{#1}}}
+
+% Stanford Encyclopedia of Philosophy.
+% This expects you to give only the URL part below the "archives", so e.g.
+% http://plato.stanford.edu/archives/spr2014/entries/situations-semantics/
+% becomes just "spr2014/entries/situations-semantics/".
+\DeclareFieldFormat{eprint:sep}{%
+  \mkbibacro{SEP}\acronymcolon\space
+  \ifhyperref
+    {\href{http://plato.stanford.edu/archives/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{http://plato.stanford.edu/archives/#1}}}
+\DeclareFieldAlias{eprint:SEP}{eprint:sep}
+
+% Berkeley Linguistics Society proceedings.
+\DeclareFieldFormat{eprint:bls}{%
+  \mkbibacro{BLS}\acronymcolon\space
+  \ifhyperref
+    {\href{http://elanguage.net/journals/bls/article/view/#1}{\nolinkurl{#1}}}
+    {\nolinkurl{http://elanguage.net/journals/bls/article/view/#1}}}
+\DeclareFieldAlias{eprint:BLS}{eprint:bls}
+
+% Rutgers Optimality Archive
+\DeclareFieldFormat{eprint:roa}{%
+  \mkbibacro{ROA}\acronymcolon\space
+  \ifhyperref
+    {%
+        \iffieldundef{eprintclass}%
+        	{\nolinkurl{#1}}%
+        	{\href{http://roa.rutgers.edu/article/view/\thefield{eprintclass}}{\nolinkurl{#1}}}%
+    }%
+    {\nolinkurl{#1}}%
+}
+\DeclareFieldAlias{eprint:ROA}{eprint:roa}
+
+% Feel free to submit more online collection types for the eprint fields.
+% Even better, pester your favourite online collection to support DOI or
+% HDL links instead.
+
+%%%
+%%% Author and editor formatting.
+%%%
+
+% To handle smallcaps for names like in _Language_ we can't just redefine
+% \mkbibnamelast, \mkbibnamefirst, etc. because this affects names that are
+% everywhere in a bibentry, not just the ones listed at the beginning. The
+% solution here, which is suboptimal, is to define new name formats and then
+% code these into the macros that print names at the beginning of bibentries.
+% An optimal solution would supply a name formatting hook similar to that used
+% by Dominik Wassenhoven in his bibliography styles (biblatex-dw). This would
+% reduce all the code duplication which is going on in the implementation here.
+% Nonetheless, this kludge works well enough for now.
+
+% The arguments passed to name formatting macros are:
+%
+% #1 last name
+% #2 last name initials
+% #3 first name
+% #4 first name initials
+% #5 name prefix, a.k.a. 'von part'
+% #6 name prefix initials
+% #7 name suffix, a.k.a. 'junior/number part'
+% #8 name suffix initials
+
+% The name formats are adapted from biblatex_.def.
+
+\DeclareNameFormat{given-family:sc}{%
+  \nameparts{#1}%
+  \ifgiveninits
+    {\usebibmacro{name:given-family:sc}
+     {\namepartfamily}
+     {\namepartgiveni}
+     {\namepartprefix}
+     {\namepartsuffix}}
+    {\usebibmacro{name:given-family:sc}
+     {\namepartfamily}
+     {\namepartgiven}
+     {\namepartprefix}
+     {\namepartsuffix}}%
+  \usebibmacro{name:andothers}}
+
+\DeclareNameFormat{family-given:sc}{%
+  \nameparts{#1}%
+  \ifgiveninits
+    {\usebibmacro{name:family-given:sc}
+     {\namepartfamily}
+     {\namepartgiveni}
+     {\namepartprefix}
+     {\namepartsuffix}}
+    {\usebibmacro{name:family-given:sc}
+     {\namepartfamily}
+     {\namepartgiven}
+     {\namepartprefix}
+     {\namepartsuffix}}%
+  \usebibmacro{name:andothers}}
+
+\DeclareNameFormat{family-given/given-family:sc}{%
+  \nameparts{#1}%
+  \ifnumequal{\value{listcount}}{1}
+    {\ifgiveninits
+       {\usebibmacro{name:family-given:sc}
+        {\namepartfamily}
+        {\namepartgiveni}
+        {\namepartprefix}
+        {\namepartsuffix}}
+       {\usebibmacro{name:family-given:sc}
+        {\namepartfamily}
+        {\namepartgiven}
+        {\namepartprefix}
+        {\namepartsuffix}}%
+     \ifblank{\namepartgiven\namepartprefix}
+       {}
+       {\usebibmacro{name:revsdelim}}}
+    {\ifgiveninits
+       {\usebibmacro{name:given-family:sc}
+        {\namepartfamily}
+        {\namepartgiveni}
+        {\namepartprefix}
+        {\namepartsuffix}}
+       {\usebibmacro{name:given-family:sc}
+        {\namepartfamily}
+        {\namepartgiven}
+        {\namepartprefix}
+        {\namepartsuffix}}}%
+  \usebibmacro{name:andothers}}
+
+% The name formatting macros are also adapted from biblatex.def.
+%
+% What we do is wrap every \mkbibnameX macro in a \mkbibscap macro. This
+% ensures that only names are set in small caps, not punctuation. Some small
+% caps fonts have different punctuation glyphs than in the corresponding
+% ordinary fonts, for example Linux Libertine which has a more calligraphic
+% ampersand with small caps enabled. This would be surprising to the user, so
+% we only apply small caps to names.
+
+\newbibmacro*{name:given-family:sc}[4]{%
+  \usebibmacro{name:delim}{#2#3#1}%
+  \usebibmacro{name:hook}{#2#3#1}%
+  \ifblank{#2}{}{\mkbibscap{\mkbibnamefirst{#2}}\isdot\addlowpenspace}%
+  \ifblank{#3}{}{%
+    \mkbibscap{\mkbibnameprefix{#3}}\isdot
+    \ifpunctmark{'}
+      {}
+      {\ifuseprefix{\addhighpenspace}{\addlowpenspace}}}%
+  \mkbibscap{\mkbibnamelast{#1}}\isdot
+  \ifblank{#4}{}{\addlowpenspace\mkbibscap{\mkbibnameaffix{#4}}\isdot}}
+
+\newbibmacro*{name:family-given:sc}[4]{%
+  \ifuseprefix
+    {\usebibmacro{name:delim}{#3#1}%
+     \usebibmacro{name:hook}{#3#1}%
+     \ifblank{#3}{}{%
+       \ifcapital
+         {\mkbibnameprefix{\MakeCapital{#3}}\isdot}
+	 {\mkbibscap{\mkbibnameprefix{#3}}\isdot}%
+       \ifpunctmark{'}{}{\addhighpenspace}}%
+     \mkbibscap{\mkbibnamelast{#1}}\isdot
+     \ifblank{#4}{}{\addlowpenspace\mkbibscap{\mkbibnameaffix{#4}}\isdot}%
+     \ifblank{#2}{}{\addcomma\addlowpenspace%
+                    \mkbibscap{\mkbibnamefirst{#2}}\isdot}}%
+    {\usebibmacro{name:delim}{#1}%
+     \usebibmacro{name:hook}{#1}%
+     \mkbibscap{\mkbibnamelast{#1}}\isdot
+     \ifblank{#4}{}{\addlowpenspace\mkbibscap{\mkbibnameaffix{#4}}\isdot}%
+     \ifblank{#2#3}{}{\addcomma}%
+     \ifblank{#2}{}{\addlowpenspace\mkbibscap{\mkbibnamefirst{#2}}\isdot}%
+     \ifblank{#3}{}{\addlowpenspace\mkbibscap{\mkbibnameprefix{#3}}\isdot}}}
+
+% The higher level macros are adapted to be sensitive to the scauthor option
+% as well as the ordering options like ae-lastfirst.
+
+% Adapted from authoryear.bbx.
+\renewbibmacro*{author}{%
+  \ifboolexpr{
+    test \ifuseauthor
+    and
+    not test {\ifnameundef{author}}
+  }
+    {\usebibmacro{bbx:dashcheck}
+       {\bibnamedash}
+       {\usebibmacro{bbx:savehash}%
+        \iftoggle{lsa:ae-lastfirst}
+          {\iftoggle{lsa:scauthor}
+             {\printnames[family-given:sc]{author}}
+             {\printnames[family-given]{author}}}%
+          {\iftoggle{lsa:scauthor}
+             {\printnames[family-given/given-family:sc]{author}}
+             {\printnames[family-given/given-family]{author}}}%
+	\iffieldundef{authortype}
+	  {\setunit{\addspace}}
+	  {\setunit{\addcomma\space}}}%
+     \iffieldundef{authortype}
+       {}
+       {\usebibmacro{authorstrg}%
+	\setunit{\addperiod\addspace}}}%
+    {\global\undef\bbx@lasthash
+     \usebibmacro{labeltitle}%
+     \setunit*{\addspace}}%
+  \setunit*{\addperiod\addspace}%
+  \usebibmacro{date+extrayear}}
+
+% Adapted from authoryear.def.
+\renewbibmacro*{editor}{%
+  \usebibmacro{bbx:editor}{editorstrg}}
+\renewbibmacro*{editor+others}{%
+  \usebibmacro{bbx:editor}{editor+othersstrg}}
+\renewbibmacro*{bbx:editor}[1]{%
+  \ifboolexpr{
+    test \ifuseeditor
+    and
+    not test {\ifnameundef{editor}}
+  }
+    {\usebibmacro{bbx:dashcheck}
+       {\bibnamedash}
+       {\iftoggle{lsa:ae-lastfirst}
+          {\iftoggle{lsa:scauthor}
+             {\printnames[family-given:sc]{editor}}
+             {\printnames[family-given]{editor}}}
+          {\iftoggle{lsa:scauthor}
+             {\printnames[family-given/given-family:sc]{editor}}
+             {\printnames[family-given/given-family]{editor}}}%
+        \iftoggle{lsa:noedparens}
+          {\setunit{\addcomma\space}%
+           \usebibmacro{bbx:savehash}%
+           \usebibmacro{#1}}
+          {\addspace%
+           \usebibmacro{bbx:savehash}%
+           \mkbibparens{\usebibmacro{#1}}}}
+     \clearname{editor}%
+     \setunit{\addperiod\addspace}}%
+    {\global\undef\bbx@lasthash
+     \usebibmacro{labeltitle}%
+     \setunit*{\addspace}}%
+  \usebibmacro{date+extrayear}}
+
+% Editor of a book or collection, used in inbook or incollection.
+\newbibmacro*{editedby}{%
+  \ifnameundef{editor}
+    {}
+    {\iftoggle{lsa:ed-onelastfirst}
+       {\printnames[family-given/given-family]{editor}}
+       {\iftoggle{lsa:ed-lastfirst}
+          {\printnames[family-given]{editor}}
+          {\printnames[given-family]{editor}}}%
+     \iftoggle{lsa:noedparens}
+       {\setunit{\addcomma\space}%
+        \usebibmacro{editorstrg}}
+       {\addspace%
+        \mkbibparens{\usebibmacro{editorstrg}}}}}
+
+%%%
+%%% Year and date formatting.
+%%%
+
+% Adapted from authoryear.bbx.
+\renewbibmacro*{date+extrayear}{%
+  \iffieldundef{year}
+    {}
+    {\iftoggle{lsa:dateparens}
+       {\printtext[parens]{\printdateextra}}
+       {\iftoggle{lsa:datebold}
+          {\printtext[bold]{\printdateextra}}
+          {\printdateextra}}}}
+
+%%%
+%%% Titles.
+%%%
+
+% Adapted from standard.bbx.
+\renewbibmacro*{maintitle+booktitle}{%
+  \iffieldundef{maintitle}
+    {}
+    {\usebibmacro{maintitle}%
+     \newunit\newblock
+     \iffieldundef{part}
+       {}
+       {\printfield{part}%
+        \setunit{\addcolon\space}}}%
+  \usebibmacro{booktitle}%
+  \newunit}
+
+
+%%%
+%%% Journal information.
+%%%
+
+% Adapted from standard.bbx.
+\renewbibmacro*{journal+issuetitle}{%
+  \usebibmacro{journal}%
+  \setunit*{\addspace}%
+  \iffieldundef{series}
+    {}
+    {\newunit
+     \printfield{series}%
+     \setunit{\addspace}}%
+  \usebibmacro{volume+number+eid}%
+  \setunit{\addspace}%
+  \usebibmacro{issue+date}%
+  \setunit{\addcolon\space}%
+  \usebibmacro{issue}%
+  \newunit}
+
+% Journal volume information.
+% Adapted from standard.bbx.
+\renewbibmacro*{volume+number+eid}{%
+  \printfield{volume}%
+  \iftoggle{lsa:voldotnum}
+    {\setunit*{\adddot}%
+     \printfield{number}}%
+    {\printfield[parens]{number}}
+  \setunit{\addcomma\space}%
+  \printfield{eid}}
+
+%%%
+%%% Series information.
+%%%
+
+% FIXME: Gratutitous assumptions that volume and number are series.
+
+\DeclareFieldFormat[book]{volume}{#1}
+\DeclareFieldFormat[book]{number}{#1}
+\DeclareFieldFormat[book]{series}{%
+  \iftoggle{lsa:bookseriesemph}
+    {\mkbibemph{#1}}
+    {#1}}
+
+\newbibmacro*{series+volume+number}{%
+  \iffieldundef{series}
+    {}
+    {\printtext[parens]{%
+       \printfield{series}%
+       \iffieldundef{volume}
+         {\iffieldundef{number}
+            {}
+            {\setunit*{\addspace}%
+             \printfield{number}}}
+         {\setunit*{\addspace}%
+          \printfield{volume}%
+          \iffieldundef{number}
+            {}
+            {\adddot\printfield{number}}}}}}
+
+%%%
+%%% Thesis and dissertation information.
+%%%
+
+% Adapted from authoryear.bbx location+institution+date.
+\newbibmacro{location+institution+type}{%
+  \printlist{location}%
+  \setunit*{\addcolon\space}%
+  \printlist{institution}%
+  \iffieldundef{type}
+    {}
+    {\iftoggle{lsa:commathesis}
+       {\setunit*{\addcomma\space}}
+       {\setunit*{\space}}%
+     \printfield{type}}
+  \newunit}
+
+%%%
+%%% Library information.
+%%%
+
+% The library field is meant to contain a catalogue or call number, such as
+% the U.S. Library of Congress Classfication Number. It is not used by the LSA
+% unified stylesheet, but may be useful to people who are organizing annotated
+% bibliographies, or people who want to keep track of their favourite books in
+% their local or personal library.
+%
+% FIXME: It would be nice to automatically make this a link to the Library
+%   of Congress's online catalogue.
+\newbibmacro*{library}{%
+  \iffieldundef{library}
+    {}
+    {\iftoggle{lsa:library}
+       {\iftoggle{lsa:scacronym}
+          {\ifcsundef{\f@encoding/\f@family/\f@series/sc}
+             {\printfield{library}}
+             {\printtext{\mkbibscap{\MakeLowercase{\thefield{library}}}}}}
+          {\printfield{library}}
+       {}}}}
+
+%%%
+%%% Bibliography drivers.
+%%%
+
+\DeclareBibliographyDriver{article}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author/translator+others}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \usebibmacro{bytranslator+others}%
+  \newunit\newblock
+  \printfield{version}%
+  \newunit\newblock
+  \usebibmacro{journal+issuetitle}%
+  \newunit
+% FIXME: Make this work properly.
+%  \usebibmacro{note+pages}%
+% FIXME: There is a cleaner way to do this.
+  \iftoggle{lsa:jnlcolonpages}%
+    {\iffieldundef{pages}
+       {}
+       {\addcolon\addspace\printfield[default]{pages}}}%
+    {\newunit\newblock\printfield[default]{pages}}%
+  \newunit\newblock
+  \iftoggle{lsa:issn}
+    {\printfield{issn}}
+    {}%
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+\DeclareBibliographyDriver{book}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author/editor+others/translator+others}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{maintitle+title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \usebibmacro{byeditor+others}%
+  \newunit\newblock
+  \printfield{edition}%
+  \newunit
+% FIXME: Make volume printing work if series isn't defined.
+  \iffieldundef{maintitle}
+    {%\printfield{volume}%
+     \printfield{part}}
+    {}%
+  \newunit
+  \printfield{volumes}%
+  \newunit\newblock
+  \usebibmacro{series+volume+number}%
+  \newunit\newblock
+  \printfield{note}%
+  \newunit\newblock
+  \usebibmacro{publisher+location+date}%
+  \newunit\newblock
+  \usebibmacro{chapter+pages}%
+  \newunit
+  \printfield{pagetotal}%
+  \newunit\newblock
+  \iftoggle{bbx:isbn}
+    {\printfield{isbn}}
+    {}%
+  \newunit\newblock
+  \usebibmacro{library}
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+\DeclareBibliographyDriver{inbook}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author/translator+others}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \usebibmacro{in}%
+  \usebibmacro{maintitle+booktitle}%
+  \setunit{\addcomma\addspace}\newblock
+% FIXME: Make this stuff compatible via a toggle somehow.
+%  \newunit\newblock
+%  \usebibmacro{bybookauthor}%
+%  \usebibmacro{byeditor+others}%
+  \usebibmacro{editedby}
+  \setunit{\addcomma\addspace}\newblock
+  \usebibmacro{chapter+pages}%
+  \newunit\newblock
+  \printfield{edition}%
+  \newunit
+% FIXME: As with book above.
+  \iffieldundef{maintitle}
+    {%\printfield{volume}
+     \printfield{part}}
+    {}%
+  \newunit
+  \printfield{volumes}%
+  \newunit\newblock
+  \usebibmacro{series+volume+number}%
+  \newunit\newblock
+  \printfield{note}%
+  \newunit\newblock
+  \usebibmacro{publisher+location+date}%
+  \newunit\newblock
+  \iftoggle{bbx:isbn}
+    {\printfield{isbn}}
+    {}%
+  \newunit\newblock
+  \usebibmacro{library}
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+\DeclareBibliographyDriver{incollection}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author/translator+others}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \usebibmacro{in}%
+  \usebibmacro{maintitle+booktitle}%
+  \setunit{\addcomma\addspace}\newblock
+% FIXME: As with inbook above.
+%  \newunit\newblock
+%  \usebibmacro{bybookauthor}%
+%  \usebibmacro{byeditor+others}%
+  \usebibmacro{editedby}
+  \setunit{\addcomma\addspace}\newblock
+  \usebibmacro{chapter+pages}%
+  \newunit\newblock
+  \printfield{edition}%
+  \newunit
+  \iffieldundef{maintitle}
+    {\printfield{part}}
+    {}%
+  \newunit
+  \printfield{volumes}%
+  \newunit\newblock
+  \usebibmacro{series+volume+number}%
+  \newunit\newblock
+  \printfield{note}%
+  \newunit\newblock
+  \usebibmacro{publisher+location+date}%
+  \newunit\newblock
+  \iftoggle{bbx:isbn}
+    {\printfield{isbn}}
+    {}%
+  \newunit\newblock
+  \usebibmacro{library}
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+\DeclareBibliographyDriver{inproceedings}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author/translator+others}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \usebibmacro{in}%
+  \usebibmacro{maintitle+booktitle}%
+  \newunit\newblock
+  \usebibmacro{event+venue+date}%
+  \setunit{\addcomma\addspace}\newblock
+% FIXME: As with inbook above.
+%  \newunit\newblock
+%  \usebibmacro{bybookauthor}%
+%  \usebibmacro{byeditor+others}%
+  \usebibmacro{editedby}
+  \setunit{\addcomma\addspace}\newblock
+  \usebibmacro{chapter+pages}%
+  \newunit\newblock
+  \printfield{edition}%
+  \newunit
+  \iffieldundef{maintitle}
+    {\printfield{part}}
+    {}%
+  \newunit
+  \printfield{volumes}%
+  \newunit\newblock
+  \usebibmacro{series+volume+number}%
+  \newunit\newblock
+  \printfield{note}%
+  \newunit\newblock
+  \printlist{organization}%
+  \newunit\newblock
+  \usebibmacro{publisher+location+date}%
+  \newunit\newblock
+  \iftoggle{bbx:isbn}
+    {\printfield{isbn}}
+    {}%
+  \newunit\newblock
+  \usebibmacro{library}
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+
+% FIXME: Detect use of mastersthesis and phdthesis entries, handle type.
+\DeclareBibliographyDriver{thesis}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \printfield{note}%
+  \newunit\newblock
+  \usebibmacro{location+institution+type}%
+  \newunit\newblock
+  \usebibmacro{chapter+pages}%
+  \newunit
+  \printfield{pagetotal}%
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+\DeclareBibliographyDriver{unpublished}{%
+  \usebibmacro{bibindex}%
+  \usebibmacro{begentry}%
+  \usebibmacro{author}%
+  \setunit{\labelnamepunct}\newblock
+  \usebibmacro{title}%
+  \newunit
+  \printlist{language}%
+  \newunit\newblock
+  \usebibmacro{byauthor}%
+  \newunit\newblock
+  \printfield{howpublished}%
+  \newunit\newblock
+  \printfield{note}%
+  \newunit\newblock
+  \usebibmacro{location+date}%
+  \newunit\newblock
+  \usebibmacro{doi+eprint+url}%
+  \newunit\newblock
+  \usebibmacro{addendum+pubstate}%
+  \setunit{\bibpagerefpunct}\newblock
+  \usebibmacro{pageref}%
+  \usebibmacro{finentry}}
+
+\endinput
